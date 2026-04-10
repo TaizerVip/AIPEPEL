@@ -27,8 +27,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 ADMIN_IDS = os.getenv("ADMIN_IDS", "")
 
-# РАБОЧАЯ МОДЕЛЬ (исправлено!)
-MODEL = "google/gemini-2.0-flash-exp:free"
+# НОВАЯ МОДЕЛЬ (исправлено!)
+MODEL = "google/gemini-2.0-flash-lite-001"
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 TIMEOUT = int(os.getenv("TIMEOUT", "60"))
