@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 Telegram бот ИИ ПЕПЕЛ
-✅ С принудительной установкой модели
-✅ Диагностика переменных
+✅ Работает через OpenRouter (без региональных блокировок)
+✅ Готов к хостингу (все переменные через .env)
+✅ Работает в группах и личке
+✅ Админ-панель
 """
 
 import logging
@@ -17,46 +19,36 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.constants import ParseMode
 from telegram.error import RetryAfter
 
-# Загружаем .env (для локального запуска)
+# Загружаем переменные из .env
 load_dotenv()
 
 # ===== ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 ADMIN_IDS = os.getenv("ADMIN_IDS", "")
 
-# ПРИНУДИТЕЛЬНАЯ УСТАНОВКА МОДЕЛИ (если переменная не загрузилась)
-MODEL = os.getenv("MODEL", "gemini-3.1-flash-lite-preview")
-if not MODEL or MODEL == "":
-    MODEL = "gemini-3.1-flash-lite-preview"  # Принудительно
+# Модель Gemini через OpenRouter (бесплатно)
+MODEL = os.getenv("MODEL", "google/gemini-3.1-flash-lite-preview:free")
 
-# ДИАГНОСТИКА
-print("=" * 50)
-print("🔍 ДИАГНОСТИКА ПЕРЕМЕННЫХ:")
-print(f"BOT_TOKEN: {'✅' if BOT_TOKEN else '❌'} (длина: {len(BOT_TOKEN) if BOT_TOKEN else 0})")
-print(f"GEMINI_API_KEY: {'✅' if GEMINI_API_KEY else '❌'} (длина: {len(GEMINI_API_KEY) if GEMINI_API_KEY else 0})")
-print(f"MODEL: {MODEL}")
-print(f"ADMIN_IDS: {ADMIN_IDS}")
-print("=" * 50)
+# URL OpenRouter API
+API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Проверка
-if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN не задан!")
-if not GEMINI_API_KEY:
-    raise ValueError("❌ GEMINI_API_KEY не задан!")
-if not ADMIN_IDS:
-    raise ValueError("❌ ADMIN_IDS не задан!")
-
-# Настройки
+# Настройки бота
 TIMEOUT = int(os.getenv("TIMEOUT", "60"))
 MAX_HISTORY = int(os.getenv("MAX_HISTORY", "2"))
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 FAKE_MESSAGE_DELAY = float(os.getenv("FAKE_MESSAGE_DELAY", "2.0"))
 
-admins_list = [int(x.strip()) for x in ADMIN_IDS.split(",") if x.strip().isdigit()]
+# Проверка обязательных переменных
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN не задан! Создай файл .env")
+if not OPENROUTER_API_KEY:
+    raise ValueError("❌ OPENROUTER_API_KEY не задан! Получи ключ на openrouter.ai/keys")
+if not ADMIN_IDS:
+    raise ValueError("❌ ADMIN_IDS не задан! Укажи свой Telegram ID")
 
-# URL для Gemini API
-GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
+# Парсим админов
+admins_list = [int(x.strip()) for x in ADMIN_IDS.split(",") if x.strip().isdigit()]
 
 DATA_FILE = "bot_data.json"
 
@@ -157,7 +149,7 @@ async def mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-# ===== АДМИН КОМАНДЫ (сокращенно) =====
+# ===== АДМИН КОМАНДЫ =====
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_admin(user_id):
@@ -171,6 +163,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔨 Бан юзеров", callback_data="admin_banned_users")],
         [InlineKeyboardButton("🚫 Бан групп", callback_data="admin_banned_chats")],
         [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")],
+        [InlineKeyboardButton("💾 Сохранить данные", callback_data="admin_save")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("🔧 *Админ-панель*", parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
@@ -229,6 +222,12 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.edit_message_text(stats_text, parse_mode=ParseMode.MARKDOWN)
         await asyncio.sleep(5)
+        await query.delete_message()
+    
+    elif action == "save":
+        save_data()
+        await query.edit_message_text("💾 Данные сохранены")
+        await asyncio.sleep(2)
         await query.delete_message()
 
 async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -303,7 +302,7 @@ def get_user_history(user_id: int) -> list:
 
 def add_to_history(user_id: int, role: str, content: str):
     history = get_user_history(user_id)
-    history.append({"role": role, "parts": [{"text": content}]})
+    history.append({"role": role, "content": content})
     if len(history) > MAX_HISTORY:
         user_histories[user_id] = history[-MAX_HISTORY:]
 
@@ -322,6 +321,8 @@ async def safe_send_message(update, text):
         return None
 
 async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt: str, user_id: int, chat_id: int, attempt=0):
+    """Запрос к Gemini через OpenRouter"""
+    
     if is_banned(user_id, chat_id):
         return
     
@@ -329,27 +330,40 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
     history = get_user_history(user_id)
     mode = user_modes.get(user_id, 'rude')
     
+    # Формируем системный промпт
     if mode == 'rude':
-        system_prompt = "Ты грубый ИИ ИИ Пепел. Отвечай на вопрос и добавь оскорбление в конце. Коротко."
+        system_prompt = """Ты грубый ИИ по имени "ИИ Пепел". ПРАВИЛА:
+1. ВСЕГДА отвечай на вопрос по существу
+2. Добавь небольшое оскорбление в конце
+3. Используй иногда: сын шлюхи, блек рашер, фрик, тупой, даун, еблан
+4. Отвечай коротко (максимум 2 предложения)"""
     else:
-        system_prompt = "Ты вежливый ассистент ИИ Пепел. Отвечай коротко и дружелюбно."
+        system_prompt = """Ты вежливый ассистент по имени "ИИ Пепел". Отвечай на вопрос по существу, коротко и дружелюбно."""
     
-    contents = [
-        {"role": "user", "parts": [{"text": system_prompt}]},
-        {"role": "model", "parts": [{"text": "Понял."}]}
+    # Формируем сообщения для OpenRouter
+    messages = [
+        {"role": "system", "content": system_prompt}
     ]
     
+    # Добавляем историю
     for msg in history:
-        contents.append(msg)
+        messages.append({"role": msg["role"], "content": msg["content"]})
     
-    contents.append({"role": "user", "parts": [{"text": prompt}]})
+    # Добавляем текущий вопрос
+    messages.append({"role": "user", "content": prompt})
     
     payload = {
-        "contents": contents,
-        "generationConfig": {
-            "temperature": 0.8 if mode == 'rude' else 0.7,
-            "maxOutputTokens": 200,
-        }
+        "model": MODEL,
+        "messages": messages,
+        "temperature": 0.8 if mode == 'rude' else 0.7,
+        "max_tokens": 200,
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://t.me/pepe_bot",
+        "X-Title": "ИИ Пепел Бот"
     }
     
     start_time = datetime.now()
@@ -360,8 +374,8 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             response = await client.post(
-                f"{GEMINI_API_URL}?key={GEMINI_API_KEY}",
-                headers={"Content-Type": "application/json"},
+                API_URL,
+                headers=headers,
                 json=payload
             )
             
@@ -375,30 +389,39 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
             if response.status_code != 200:
                 error_text = response.text[:200]
                 logger.error(f"Ошибка {response.status_code}: {error_text}")
-                await safe_send_message(update, f"❌ Ошибка {response.status_code}")
+                await safe_send_message(update, f"❌ Ошибка API: {response.status_code}")
                 return
             
             result = response.json()
             
-            if "candidates" in result and result["candidates"]:
-                candidate = result["candidates"][0]
-                if "content" in candidate and "parts" in candidate["content"]:
-                    full_response = "".join(part.get("text", "") for part in candidate["content"]["parts"])
-                    if full_response:
-                        await safe_send_message(update, full_response)
-                        add_to_history(user_id, "model", full_response)
-                        logger.info(f"✅ {elapsed:.1f} сек")
-                        return
+            if "choices" in result and result["choices"]:
+                full_response = result["choices"][0]["message"]["content"]
+                if full_response:
+                    await safe_send_message(update, full_response)
+                    add_to_history(user_id, "assistant", full_response)
+                    logger.info(f"✅ {elapsed:.1f} сек | модель: {MODEL}")
+                    return
             
-            await safe_send_message(update, "❌ Пустой ответ")
+            await safe_send_message(update, "❌ Пустой ответ от нейросети")
     
     except httpx.TimeoutException:
-        logger.warning(f"Таймаут")
+        logger.warning(f"Таймаут, попытка {attempt + 1}/{MAX_RETRIES}")
         try:
             await fake_message.delete()
         except:
             pass
-        await safe_send_message(update, "❌ Сервер не отвечает")
+        
+        if attempt < MAX_RETRIES - 1:
+            msg = await safe_send_message(update, f"⏳ Таймаут, повтор... ({attempt + 1}/{MAX_RETRIES})")
+            await asyncio.sleep(5)
+            if msg:
+                try:
+                    await msg.delete()
+                except:
+                    pass
+            return await ask_gemini(update, context, prompt, user_id, chat_id, attempt + 1)
+        else:
+            await safe_send_message(update, "❌ Сервер не отвечает. Попробуй позже")
                 
     except Exception as e:
         logger.error(f"Ошибка: {e}")
@@ -406,7 +429,7 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
             await fake_message.delete()
         except:
             pass
-        await safe_send_message(update, "❌ Ошибка")
+        await safe_send_message(update, f"❌ Ошибка: {str(e)[:100]}")
 
 # ===== КОМАНДЫ БОТА =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -415,10 +438,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
         "👋 *ИИ ПЕПЕЛ*\n\n"
-        "📱 *В личке:* просто пиши\n"
-        "👥 *В группе:* 'пепел' в начале\n\n"
-        "📝 /clear - очистить историю\n"
-        "🔧 /admin - админ-панель",
+        "🎯 *Как меня вызвать:*\n\n"
+        "📱 *В личке:* просто пиши любое сообщение\n\n"
+        "👥 *В группе:*\n"
+        "• Напиши `пепел` в начале сообщения\n"
+        "• ИЛИ ответь на моё сообщение\n\n"
+        "📝 *Команды:*\n"
+        "• `/clear` - очистить историю\n"
+        "• `/admin` - админ-панель\n\n"
+        "👇 Нажми на кнопку ниже, чтобы выбрать стиль общения",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=reply_markup
     )
@@ -426,9 +454,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     clear_user_history(user_id)
-    await update.message.reply_text("🧹 *История очищена*", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("🧹 *История диалога очищена!*", parse_mode=ParseMode.MARKDOWN)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка сообщений"""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     message_text = update.message.text
@@ -464,14 +493,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     load_data()
     
-    print("=" * 50)
-    print("🤬 ИИ ПЕПЕЛ БОТ")
+    print("=" * 60)
+    print("🤬 ИИ ПЕПЕЛ БОТ (через OpenRouter)")
     print(f"✅ Модель: {MODEL}")
+    print(f"✅ API: OpenRouter")
     print(f"✅ Админы: {admins}")
-    print("=" * 50)
+    print(f"✅ Таймаут: {TIMEOUT} сек")
+    print(f"✅ История: {MAX_HISTORY} сообщений")
+    print("=" * 60)
     
     app = Application.builder().token(BOT_TOKEN).build()
     
+    # Команды
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("clear", clear_command))
     app.add_handler(CommandHandler("admin", admin_panel))
@@ -481,13 +514,15 @@ def main():
     app.add_handler(CommandHandler("banchat", ban_chat))
     app.add_handler(CommandHandler("unban", unban))
     
+    # Callback handlers
     app.add_handler(CallbackQueryHandler(mode_menu_callback, pattern="mode_menu"))
     app.add_handler(CallbackQueryHandler(mode_callback, pattern="mode_"))
     app.add_handler(CallbackQueryHandler(admin_callback, pattern="admin_"))
     
+    # Обработка сообщений
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("✅ Бот запущен!")
+    print("✅ Бот успешно запущен!")
     app.run_polling()
 
 if __name__ == "__main__":
@@ -495,3 +530,5 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("\n👋 Бот остановлен")
+    except Exception as e:
+        print(f"\n❌ Критическая ошибка: {e}")
