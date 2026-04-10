@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """
 Telegram бот ИИ ПЕПЕЛ
-✅ Переменные окружения через .env
-✅ Работает в группах и личке
-✅ Админ-панель
-✅ Защита от флуда
+✅ С принудительной установкой модели
+✅ Диагностика переменных
 """
 
 import logging
@@ -19,33 +17,47 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.constants import ParseMode
 from telegram.error import RetryAfter
 
-# Загружаем переменные из .env файла
+# Загружаем .env (для локального запуска)
 load_dotenv()
 
 # ===== ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL = os.getenv("MODEL", "gemini-3.1-flash-lite-preview")
 ADMIN_IDS = os.getenv("ADMIN_IDS", "")
 
-# Настройки бота
+# ПРИНУДИТЕЛЬНАЯ УСТАНОВКА МОДЕЛИ (если переменная не загрузилась)
+MODEL = os.getenv("MODEL", "gemini-3.1-flash-lite-preview")
+if not MODEL or MODEL == "":
+    MODEL = "gemini-3.1-flash-lite-preview"  # Принудительно
+
+# ДИАГНОСТИКА
+print("=" * 50)
+print("🔍 ДИАГНОСТИКА ПЕРЕМЕННЫХ:")
+print(f"BOT_TOKEN: {'✅' if BOT_TOKEN else '❌'} (длина: {len(BOT_TOKEN) if BOT_TOKEN else 0})")
+print(f"GEMINI_API_KEY: {'✅' if GEMINI_API_KEY else '❌'} (длина: {len(GEMINI_API_KEY) if GEMINI_API_KEY else 0})")
+print(f"MODEL: {MODEL}")
+print(f"ADMIN_IDS: {ADMIN_IDS}")
+print("=" * 50)
+
+# Проверка
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN не задан!")
+if not GEMINI_API_KEY:
+    raise ValueError("❌ GEMINI_API_KEY не задан!")
+if not ADMIN_IDS:
+    raise ValueError("❌ ADMIN_IDS не задан!")
+
+# Настройки
 TIMEOUT = int(os.getenv("TIMEOUT", "60"))
 MAX_HISTORY = int(os.getenv("MAX_HISTORY", "2"))
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 FAKE_MESSAGE_DELAY = float(os.getenv("FAKE_MESSAGE_DELAY", "2.0"))
 
-# Проверка обязательных переменных
-if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN не задан! Создай файл .env")
-if not GEMINI_API_KEY:
-    raise ValueError("❌ GEMINI_API_KEY не задан! Создай файл .env")
-if not ADMIN_IDS:
-    raise ValueError("❌ ADMIN_IDS не задан! Создай файл .env")
-
-# Парсим админов
 admins_list = [int(x.strip()) for x in ADMIN_IDS.split(",") if x.strip().isdigit()]
 
+# URL для Gemini API
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
+
 DATA_FILE = "bot_data.json"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)-8s | %(message)s')
@@ -69,20 +81,17 @@ def load_data():
                 banned_users = data.get('banned_users', [])
                 banned_chats = data.get('banned_chats', [])
                 bot_enabled = data.get('bot_enabled', True)
-        except Exception as e:
-            logger.error(f"Ошибка загрузки данных: {e}")
+        except:
+            pass
 
 def save_data():
-    try:
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump({
-                'admins': admins,
-                'banned_users': banned_users,
-                'banned_chats': banned_chats,
-                'bot_enabled': bot_enabled
-            }, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.error(f"Ошибка сохранения данных: {e}")
+    with open(DATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump({
+            'admins': admins,
+            'banned_users': banned_users,
+            'banned_chats': banned_chats,
+            'bot_enabled': bot_enabled
+        }, f, ensure_ascii=False, indent=2)
 
 def is_admin(user_id: int) -> bool:
     return user_id in admins
@@ -148,7 +157,7 @@ async def mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-# ===== АДМИН КОМАНДЫ =====
+# ===== АДМИН КОМАНДЫ (сокращенно) =====
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_admin(user_id):
@@ -162,7 +171,6 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔨 Бан юзеров", callback_data="admin_banned_users")],
         [InlineKeyboardButton("🚫 Бан групп", callback_data="admin_banned_chats")],
         [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")],
-        [InlineKeyboardButton("💾 Сохранить данные", callback_data="admin_save")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("🔧 *Админ-панель*", parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
@@ -222,12 +230,6 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(stats_text, parse_mode=ParseMode.MARKDOWN)
         await asyncio.sleep(5)
         await query.delete_message()
-    
-    elif action == "save":
-        save_data()
-        await query.edit_message_text("💾 Данные сохранены")
-        await asyncio.sleep(2)
-        await query.delete_message()
 
 async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -238,8 +240,6 @@ async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             admins.append(new_admin)
             save_data()
             await update.message.reply_text(f"✅ Админ {new_admin} добавлен")
-        else:
-            await update.message.reply_text(f"❌ Уже админ")
     except:
         await update.message.reply_text("❌ /addadmin ID")
 
@@ -252,8 +252,6 @@ async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             admins.remove(old_admin)
             save_data()
             await update.message.reply_text(f"✅ Админ {old_admin} удален")
-        else:
-            await update.message.reply_text(f"❌ Нельзя удалить")
     except:
         await update.message.reply_text("❌ /removeadmin ID")
 
@@ -294,8 +292,6 @@ async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
             banned_chats.remove(unban_id)
             save_data()
             await update.message.reply_text(f"🔓 Группа {unban_id} разбанена")
-        else:
-            await update.message.reply_text(f"❌ Не в бане")
     except:
         await update.message.reply_text("❌ /unban ID")
 
@@ -334,9 +330,9 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
     mode = user_modes.get(user_id, 'rude')
     
     if mode == 'rude':
-        system_prompt = """Ты грубый ИИ "ИИ Пепел". Отвечай на вопрос и добавь оскорбление в конце. Коротко."""
+        system_prompt = "Ты грубый ИИ ИИ Пепел. Отвечай на вопрос и добавь оскорбление в конце. Коротко."
     else:
-        system_prompt = """Ты вежливый ассистент "ИИ Пепел". Отвечай коротко и дружелюбно."""
+        system_prompt = "Ты вежливый ассистент ИИ Пепел. Отвечай коротко и дружелюбно."
     
     contents = [
         {"role": "user", "parts": [{"text": system_prompt}]},
@@ -377,6 +373,8 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
                 pass
             
             if response.status_code != 200:
+                error_text = response.text[:200]
+                logger.error(f"Ошибка {response.status_code}: {error_text}")
                 await safe_send_message(update, f"❌ Ошибка {response.status_code}")
                 return
             
@@ -392,26 +390,15 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
                         logger.info(f"✅ {elapsed:.1f} сек")
                         return
             
-            await safe_send_message(update, "❌ Не удалось получить ответ")
+            await safe_send_message(update, "❌ Пустой ответ")
     
     except httpx.TimeoutException:
-        logger.warning(f"Таймаут, попытка {attempt + 1}/{MAX_RETRIES}")
+        logger.warning(f"Таймаут")
         try:
             await fake_message.delete()
         except:
             pass
-        
-        if attempt < MAX_RETRIES - 1:
-            msg = await safe_send_message(update, f"⏳ Повтор... ({attempt + 1}/{MAX_RETRIES})")
-            await asyncio.sleep(5)
-            if msg:
-                try:
-                    await msg.delete()
-                except:
-                    pass
-            return await ask_gemini(update, context, prompt, user_id, chat_id, attempt + 1)
-        else:
-            await safe_send_message(update, "❌ Сервер не отвечает")
+        await safe_send_message(update, "❌ Сервер не отвечает")
                 
     except Exception as e:
         logger.error(f"Ошибка: {e}")
@@ -479,8 +466,8 @@ def main():
     
     print("=" * 50)
     print("🤬 ИИ ПЕПЕЛ БОТ")
+    print(f"✅ Модель: {MODEL}")
     print(f"✅ Админы: {admins}")
-    print(f"✅ Таймаут: {TIMEOUT} сек")
     print("=" * 50)
     
     app = Application.builder().token(BOT_TOKEN).build()
