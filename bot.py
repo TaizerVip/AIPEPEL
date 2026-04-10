@@ -2,24 +2,23 @@
 # -*- coding: utf-8 -*-
 import sys
 import io
+import os
 
-# ПРИНУДИТЕЛЬНАЯ УСТАНОВКА UTF-8 (решает проблему с русским текстом)
+# ПРИНУДИТЕЛЬНАЯ УСТАНОВКА UTF-8
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 import logging
 import asyncio
 import httpx
 import json
-import os
 from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
-from telegram.constants import ParseMode
 from telegram.error import RetryAfter
 
-# Загружаем переменные из .env
 load_dotenv()
 
 # ===== ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ =====
@@ -27,19 +26,14 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 ADMIN_IDS = os.getenv("ADMIN_IDS", "")
 
-# Модель Gemini через OpenRouter (бесплатно)
 MODEL = os.getenv("MODEL", "google/gemini-2.0-flash-exp:free")
-
-# URL OpenRouter API
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Настройки бота
 TIMEOUT = int(os.getenv("TIMEOUT", "60"))
 MAX_HISTORY = int(os.getenv("MAX_HISTORY", "2"))
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 FAKE_MESSAGE_DELAY = float(os.getenv("FAKE_MESSAGE_DELAY", "2.0"))
 
-# Проверка обязательных переменных
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN not set!")
 if not OPENROUTER_API_KEY:
@@ -47,12 +41,16 @@ if not OPENROUTER_API_KEY:
 if not ADMIN_IDS:
     raise ValueError("ADMIN_IDS not set!")
 
-# Парсим админов
 admins_list = [int(x.strip()) for x in ADMIN_IDS.split(",") if x.strip().isdigit()]
 
 DATA_FILE = "bot_data.json"
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)-8s | %(message)s')
+# Настройка логирования с UTF-8
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 logger = logging.getLogger(__name__)
 
 # ===== ХРАНЕНИЕ ДАННЫХ =====
@@ -95,12 +93,22 @@ def starts_with_pepel(text: str) -> tuple:
     if not text:
         return False, None
     text_lower = text.lower().strip()
-    if text_lower.startswith("пепел"):
+    if text_lower.startswith("pepel"):
         cleaned = text[5:].strip() if len(text) > 5 else ""
         if cleaned and cleaned[0] in [',', ' ', '.', '!', '?', ':']:
             cleaned = cleaned[1:].strip()
         return True, cleaned
     return False, None
+
+def safe_text(text: str) -> str:
+    """Очищает текст от проблемных символов"""
+    if not text:
+        return ""
+    try:
+        # Пробуем закодировать в UTF-8 и декодировать обратно
+        return text.encode('utf-8', errors='ignore').decode('utf-8')
+    except:
+        return str(text)
 
 # ===== КНОПКИ =====
 async def mode_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -108,16 +116,16 @@ async def mode_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     
     keyboard = [
-        [InlineKeyboardButton("OSKORBITELNY", callback_data="mode_rude")],
-        [InlineKeyboardButton("OBYCHNY", callback_data="mode_normal")],
+        [InlineKeyboardButton("RUDE", callback_data="mode_rude")],
+        [InlineKeyboardButton("NORMAL", callback_data="mode_normal")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
         await query.edit_message_text(
-            "Choose mode:\n\n"
-            "Rude - answers with insults\n"
-            "Normal - polite assistant",
+            "SELECT MODE:\n\n"
+            "RUDE - answers with insults\n"
+            "NORMAL - polite assistant",
             reply_markup=reply_markup
         )
     except RetryAfter as e:
@@ -131,11 +139,10 @@ async def mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mode = query.data.split("_")[1]
     user_modes[user_id] = mode
     
-    mode_text = "Rude" if mode == "rude" else "Normal"
-    emoji = "🤬" if mode == "rude" else "😊"
+    mode_text = "RUDE" if mode == "rude" else "NORMAL"
     
     try:
-        await query.edit_message_text(f"{emoji} Mode changed to {mode_text}")
+        await query.edit_message_text(f"Mode changed to {mode_text}")
     except RetryAfter as e:
         await asyncio.sleep(e.retry_after)
     
@@ -155,14 +162,14 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status = "ON" if bot_enabled else "OFF"
     keyboard = [
         [InlineKeyboardButton(f"Status: {status}", callback_data="admin_toggle")],
-        [InlineKeyboardButton("Admins list", callback_data="admin_list")],
+        [InlineKeyboardButton("Admins", callback_data="admin_list")],
         [InlineKeyboardButton("Banned users", callback_data="admin_banned_users")],
         [InlineKeyboardButton("Banned chats", callback_data="admin_banned_chats")],
-        [InlineKeyboardButton("Statistics", callback_data="admin_stats")],
-        [InlineKeyboardButton("Save data", callback_data="admin_save")],
+        [InlineKeyboardButton("Stats", callback_data="admin_stats")],
+        [InlineKeyboardButton("Save", callback_data="admin_save")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Admin panel:", reply_markup=reply_markup)
+    await update.message.reply_text("ADMIN PANEL:", reply_markup=reply_markup)
 
 async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -193,7 +200,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "banned_users":
         if banned_users:
             banned_list = "\n".join([f"• {uid}" for uid in banned_users])
-            await query.edit_message_text(f"Banned users:\n{banned_list}")
+            await query.edit_message_text(f"Banned:\n{banned_list}")
         else:
             await query.edit_message_text("No banned users")
         await asyncio.sleep(5)
@@ -210,7 +217,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif action == "stats":
         stats_text = (
-            f"Statistics:\n"
+            f"STATISTICS:\n"
             f"Dialogs: {len(user_histories)}\n"
             f"Admins: {len(admins)}\n"
             f"Banned: {len(banned_users)}\n"
@@ -298,6 +305,7 @@ def get_user_history(user_id: int) -> list:
 
 def add_to_history(user_id: int, role: str, content: str):
     history = get_user_history(user_id)
+    content = safe_text(content)
     history.append({"role": role, "content": content})
     if len(history) > MAX_HISTORY:
         user_histories[user_id] = history[-MAX_HISTORY:]
@@ -307,45 +315,35 @@ def clear_user_history(user_id: int):
 
 async def safe_send_message(update, text):
     try:
+        text = safe_text(text)
         return await update.message.reply_text(text)
     except RetryAfter as e:
-        logger.warning(f"Flood control, wait {e.retry_after} sec")
+        logger.warning(f"Flood, wait {e.retry_after}s")
         await asyncio.sleep(e.retry_after)
-        return await update.message.reply_text(text)
+        return await update.message.reply_text(safe_text(text))
     except Exception as e:
         logger.error(f"Send error: {e}")
         return None
 
 async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt: str, user_id: int, chat_id: int, attempt=0):
-    """Request to Gemini via OpenRouter"""
-    
     if is_banned(user_id, chat_id):
         return
     
+    prompt = safe_text(prompt)
     add_to_history(user_id, "user", prompt)
     history = get_user_history(user_id)
     mode = user_modes.get(user_id, 'rude')
     
-    # System prompt
     if mode == 'rude':
-        system_prompt = """You are a rude AI named "II Pepel". RULES:
-1. ALWAYS answer the question
-2. Add a small insult at the end
-3. Use sometimes: son of a bitch, black rusher, freak, stupid
-4. Answer short (max 2 sentences)"""
+        system_prompt = "You are a rude AI. Answer the question and add a small insult at the end. Answer short."
     else:
-        system_prompt = """You are a polite assistant named "II Pepel". Answer shortly and friendly."""
+        system_prompt = "You are a polite assistant. Answer shortly and friendly."
     
-    # Messages for OpenRouter
-    messages = [
-        {"role": "system", "content": system_prompt}
-    ]
+    messages = [{"role": "system", "content": system_prompt}]
     
-    # Add history
     for msg in history:
-        messages.append({"role": msg["role"], "content": msg["content"]})
+        messages.append({"role": msg["role"], "content": safe_text(msg["content"])})
     
-    # Add current question
     messages.append({"role": "user", "content": prompt})
     
     payload = {
@@ -358,8 +356,6 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://t.me/pepe_bot",
-        "X-Title": "II Pepel Bot"
     }
     
     start_time = datetime.now()
@@ -369,11 +365,7 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
     
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            response = await client.post(
-                API_URL,
-                headers=headers,
-                json=payload
-            )
+            response = await client.post(API_URL, headers=headers, json=payload)
             
             elapsed = (datetime.now() - start_time).total_seconds()
             
@@ -383,8 +375,6 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
                 pass
             
             if response.status_code != 200:
-                error_text = response.text[:200]
-                logger.error(f"API error {response.status_code}: {error_text}")
                 await safe_send_message(update, f"API error: {response.status_code}")
                 return
             
@@ -393,57 +383,46 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
             if "choices" in result and result["choices"]:
                 full_response = result["choices"][0]["message"]["content"]
                 if full_response:
+                    full_response = safe_text(full_response)
                     await safe_send_message(update, full_response)
                     add_to_history(user_id, "assistant", full_response)
-                    logger.info(f"Done in {elapsed:.1f} sec | model: {MODEL}")
+                    logger.info(f"Done in {elapsed:.1f}s")
                     return
             
             await safe_send_message(update, "Empty response")
     
     except httpx.TimeoutException:
-        logger.warning(f"Timeout, attempt {attempt + 1}/{MAX_RETRIES}")
         try:
             await fake_message.delete()
         except:
             pass
         
         if attempt < MAX_RETRIES - 1:
-            msg = await safe_send_message(update, f"Timeout, retrying... ({attempt + 1}/{MAX_RETRIES})")
+            await safe_send_message(update, f"Timeout, retrying... ({attempt + 1}/{MAX_RETRIES})")
             await asyncio.sleep(5)
-            if msg:
-                try:
-                    await msg.delete()
-                except:
-                    pass
             return await ask_gemini(update, context, prompt, user_id, chat_id, attempt + 1)
         else:
-            await safe_send_message(update, "Server timeout. Try again later")
+            await safe_send_message(update, "Server timeout")
                 
     except Exception as e:
-        logger.error(f"Error: {e}")
         try:
             await fake_message.delete()
         except:
             pass
-        await safe_send_message(update, f"Error: {str(e)[:100]}")
+        await safe_send_message(update, f"Error")
 
 # ===== COMMANDS =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("Choose mode", callback_data="mode_menu")]]
+    keyboard = [[InlineKeyboardButton("SELECT MODE", callback_data="mode_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
         "II PEPEL BOT\n\n"
-        "HOW TO USE:\n\n"
-        "PRIVATE CHAT:\n"
-        "Just write any message\n\n"
-        "GROUP CHAT:\n"
-        "Write 'pepel' at the beginning\n"
-        "OR reply to my message\n\n"
-        "COMMANDS:\n"
+        "PRIVATE CHAT: just write\n"
+        "GROUP CHAT: write 'pepel' at beginning\n\n"
+        "Commands:\n"
         "/clear - clear history\n"
-        "/admin - admin panel\n\n"
-        "Press button below to choose style",
+        "/admin - admin panel",
         reply_markup=reply_markup
     )
 
@@ -471,7 +450,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_type == "private":
         should_answer = True
     else:
-        starts_with, cleaned = starts_with_pepel(message_text)
+        starts_with, cleaned = starts_with_pepel(message_text.lower())
         if starts_with:
             should_answer = True
             cleaned_text = cleaned if cleaned else "say something"
@@ -489,10 +468,9 @@ def main():
     load_data()
     
     print("=" * 50)
-    print("II PEPEL BOT (via OpenRouter)")
+    print("II PEPEL BOT")
     print(f"Model: {MODEL}")
     print(f"Admins: {admins}")
-    print(f"Timeout: {TIMEOUT} sec")
     print("=" * 50)
     
     app = Application.builder().token(BOT_TOKEN).build()
@@ -520,5 +498,3 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("\nBot stopped")
-    except Exception as e:
-        print(f"\nCritical error: {e}")
