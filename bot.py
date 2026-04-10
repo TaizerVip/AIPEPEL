@@ -49,7 +49,7 @@ admins_list = [int(x.strip()) for x in ADMIN_IDS.split(",") if x.strip().isdigit
 
 DATA_FILE = "bot_data.json"
 
-# Настройка логирования ТОЛЬКО на английском
+# Логи ТОЛЬКО на английском (чтобы не было ошибок)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s | %(levelname)-8s | %(message)s',
@@ -112,7 +112,7 @@ def safe_text(text: str) -> str:
     except:
         return str(text)
 
-# ===== КНОПКИ =====
+# ===== КНОПКИ (РУССКИЙ) =====
 async def mode_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -125,9 +125,9 @@ async def mode_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     try:
         await query.edit_message_text(
-            "🎭 *Vyberi rezhim:*\n\n"
-            "🤬 *Rude* - otvechaet s oskorbleniyami\n"
-            "😊 *Normal* - vezhlivyj assistant",
+            "🎭 *Выбери режим общения:*\n\n"
+            "🤬 *Оскорбительный* - отвечает с лёгкими оскорблениями\n"
+            "😊 *Обычный* - вежливый ассистент",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=reply_markup
         )
@@ -142,11 +142,14 @@ async def mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mode = query.data.split("_")[1]
     user_modes[user_id] = mode
     
-    mode_text = "RUDE" if mode == "rude" else "NORMAL"
+    mode_text = "ОСКОРБИТЕЛЬНЫЙ" if mode == "rude" else "ОБЫЧНЫЙ"
     emoji = "🤬" if mode == "rude" else "😊"
     
     try:
-        await query.edit_message_text(f"{emoji} Mode changed to {mode_text}")
+        await query.edit_message_text(
+            f"{emoji} *Режим изменён на {mode_text}*",
+            parse_mode=ParseMode.MARKDOWN
+        )
     except RetryAfter as e:
         await asyncio.sleep(e.retry_after)
     
@@ -156,24 +159,24 @@ async def mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-# ===== АДМИН КОМАНДЫ =====
+# ===== АДМИН КОМАНДЫ (РУССКИЙ) =====
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_admin(user_id):
-        await update.message.reply_text("❌ Net dostupa")
+        await update.message.reply_text("❌ Нет доступа")
         return
     
-    status = "✅ ON" if bot_enabled else "❌ OFF"
+    status = "✅ ВКЛЮЧЕН" if bot_enabled else "❌ ВЫКЛЮЧЕН"
     keyboard = [
-        [InlineKeyboardButton(f"Status: {status}", callback_data="admin_toggle")],
-        [InlineKeyboardButton("👥 Admins list", callback_data="admin_list")],
-        [InlineKeyboardButton("🔨 Banned users", callback_data="admin_banned_users")],
-        [InlineKeyboardButton("🚫 Banned chats", callback_data="admin_banned_chats")],
-        [InlineKeyboardButton("📊 Statistics", callback_data="admin_stats")],
-        [InlineKeyboardButton("💾 Save data", callback_data="admin_save")],
+        [InlineKeyboardButton(f"Статус: {status}", callback_data="admin_toggle")],
+        [InlineKeyboardButton("👥 Список админов", callback_data="admin_list")],
+        [InlineKeyboardButton("🔨 Забаненные пользователи", callback_data="admin_banned_users")],
+        [InlineKeyboardButton("🚫 Забаненные группы", callback_data="admin_banned_chats")],
+        [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")],
+        [InlineKeyboardButton("💾 Сохранить данные", callback_data="admin_save")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("🔧 *Admin panel*", parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+    await update.message.reply_text("🔧 *Админ-панель*", parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
 
 async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -181,7 +184,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = query.from_user.id
     if not is_admin(user_id):
-        await query.edit_message_text("❌ Access denied")
+        await query.edit_message_text("❌ Доступ запрещён")
         return
     
     action = query.data.split("_")[1]
@@ -190,42 +193,42 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         global bot_enabled
         bot_enabled = not bot_enabled
         save_data()
-        status = "ON" if bot_enabled else "OFF"
-        await query.edit_message_text(f"✅ Bot {status}")
+        status = "ВКЛЮЧЕН" if bot_enabled else "ВЫКЛЮЧЕН"
+        await query.edit_message_text(f"✅ Бот {status}")
         await asyncio.sleep(2)
         await query.delete_message()
     
     elif action == "list":
         admin_list = "\n".join([f"• `{aid}`" for aid in admins])
-        await query.edit_message_text(f"👥 *Admins:*\n{admin_list}", parse_mode=ParseMode.MARKDOWN)
+        await query.edit_message_text(f"👥 *Админы:*\n{admin_list}", parse_mode=ParseMode.MARKDOWN)
         await asyncio.sleep(5)
         await query.delete_message()
     
     elif action == "banned_users":
         if banned_users:
             banned_list = "\n".join([f"• `{uid}`" for uid in banned_users])
-            await query.edit_message_text(f"🔨 *Banned users:*\n{banned_list}", parse_mode=ParseMode.MARKDOWN)
+            await query.edit_message_text(f"🔨 *Забаненные пользователи:*\n{banned_list}", parse_mode=ParseMode.MARKDOWN)
         else:
-            await query.edit_message_text("🔨 No banned users")
+            await query.edit_message_text("🔨 Нет забаненных пользователей")
         await asyncio.sleep(5)
         await query.delete_message()
     
     elif action == "banned_chats":
         if banned_chats:
             banned_list = "\n".join([f"• `{cid}`" for cid in banned_chats])
-            await query.edit_message_text(f"🚫 *Banned chats:*\n{banned_list}", parse_mode=ParseMode.MARKDOWN)
+            await query.edit_message_text(f"🚫 *Забаненные группы:*\n{banned_list}", parse_mode=ParseMode.MARKDOWN)
         else:
-            await query.edit_message_text("🚫 No banned chats")
+            await query.edit_message_text("🚫 Нет забаненных групп")
         await asyncio.sleep(5)
         await query.delete_message()
     
     elif action == "stats":
         stats_text = (
-            f"📊 *Statistics:*\n"
-            f"Dialogs: {len(user_histories)}\n"
-            f"Admins: {len(admins)}\n"
-            f"Banned: {len(banned_users)}\n"
-            f"Bot: {'ON' if bot_enabled else 'OFF'}"
+            f"📊 *Статистика:*\n\n"
+            f"• Диалогов: {len(user_histories)}\n"
+            f"• Админов: {len(admins)}\n"
+            f"• В бане: {len(banned_users)}\n"
+            f"• Бот: {'Вкл' if bot_enabled else 'Выкл'}"
         )
         await query.edit_message_text(stats_text, parse_mode=ParseMode.MARKDOWN)
         await asyncio.sleep(5)
@@ -233,7 +236,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif action == "save":
         save_data()
-        await query.edit_message_text("💾 Data saved")
+        await query.edit_message_text("💾 Данные сохранены")
         await asyncio.sleep(2)
         await query.delete_message()
 
@@ -245,9 +248,9 @@ async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if new_admin not in admins:
             admins.append(new_admin)
             save_data()
-            await update.message.reply_text(f"✅ Admin {new_admin} added")
+            await update.message.reply_text(f"✅ Админ {new_admin} добавлен")
     except:
-        await update.message.reply_text("❌ Use: /addadmin ID")
+        await update.message.reply_text("❌ Используй: /addadmin ID")
 
 async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -257,9 +260,9 @@ async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if old_admin in admins and old_admin != admins[0]:
             admins.remove(old_admin)
             save_data()
-            await update.message.reply_text(f"✅ Admin {old_admin} removed")
+            await update.message.reply_text(f"✅ Админ {old_admin} удалён")
     except:
-        await update.message.reply_text("❌ Use: /removeadmin ID")
+        await update.message.reply_text("❌ Используй: /removeadmin ID")
 
 async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -269,9 +272,9 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if ban_id not in banned_users:
             banned_users.append(ban_id)
             save_data()
-            await update.message.reply_text(f"🔨 User {ban_id} banned")
+            await update.message.reply_text(f"🔨 Пользователь {ban_id} забанен")
     except:
-        await update.message.reply_text("❌ Use: /ban ID")
+        await update.message.reply_text("❌ Используй: /ban ID")
 
 async def ban_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -281,9 +284,9 @@ async def ban_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if ban_id not in banned_chats:
             banned_chats.append(ban_id)
             save_data()
-            await update.message.reply_text(f"🚫 Chat {ban_id} banned")
+            await update.message.reply_text(f"🚫 Группа {ban_id} забанена")
     except:
-        await update.message.reply_text("❌ Use: /banchat ID")
+        await update.message.reply_text("❌ Используй: /banchat ID")
 
 async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -293,13 +296,13 @@ async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if unban_id in banned_users:
             banned_users.remove(unban_id)
             save_data()
-            await update.message.reply_text(f"🔓 User {unban_id} unbanned")
+            await update.message.reply_text(f"🔓 Пользователь {unban_id} разбанен")
         elif unban_id in banned_chats:
             banned_chats.remove(unban_id)
             save_data()
-            await update.message.reply_text(f"🔓 Chat {unban_id} unbanned")
+            await update.message.reply_text(f"🔓 Группа {unban_id} разбанена")
     except:
-        await update.message.reply_text("❌ Use: /unban ID")
+        await update.message.reply_text("❌ Используй: /unban ID")
 
 # ===== ОСНОВНЫЕ ФУНКЦИИ =====
 def get_user_history(user_id: int) -> list:
@@ -339,13 +342,13 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
     mode = user_modes.get(user_id, 'rude')
     
     if mode == 'rude':
-        system_prompt = """You are a rude AI named "II Pepel". RULES:
-1. ALWAYS answer the question
-2. Add a small insult at the end
-3. Use sometimes: son of a bitch, black rusher, freak, stupid
-4. Answer short (max 2 sentences)"""
+        system_prompt = """Ты грубый ИИ по имени "ИИ Пепел". ПРАВИЛА:
+1. ВСЕГДА отвечай на вопрос по существу
+2. Добавь небольшое оскорбление в конце
+3. Используй иногда: сын шлюхи, блек рашер, фрик, тупой, даун, еблан
+4. Отвечай коротко (максимум 2 предложения)"""
     else:
-        system_prompt = """You are a polite assistant named "II Pepel". Answer shortly and friendly."""
+        system_prompt = """Ты вежливый ассистент по имени "ИИ Пепел". Отвечай на вопрос по существу, коротко и дружелюбно."""
     
     messages = [{"role": "system", "content": system_prompt}]
     
@@ -371,7 +374,7 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
     start_time = datetime.now()
     await asyncio.sleep(FAKE_MESSAGE_DELAY)
     
-    fake_message = await safe_send_message(update, "⏳ generating...")
+    fake_message = await safe_send_message(update, "⏳ генерирую...")
     
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
@@ -387,7 +390,7 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
             if response.status_code != 200:
                 error_text = response.text[:200]
                 logger.error(f"API error {response.status_code}: {error_text}")
-                await safe_send_message(update, f"❌ API error: {response.status_code}")
+                await safe_send_message(update, f"❌ Ошибка API: {response.status_code}")
                 return
             
             result = response.json()
@@ -401,7 +404,7 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
                     logger.info(f"Done in {elapsed:.1f}s")
                     return
             
-            await safe_send_message(update, "❌ Empty response")
+            await safe_send_message(update, "❌ Пустой ответ")
     
     except httpx.TimeoutException:
         logger.warning(f"Timeout, attempt {attempt + 1}/{MAX_RETRIES}")
@@ -411,7 +414,7 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
             pass
         
         if attempt < MAX_RETRIES - 1:
-            msg = await safe_send_message(update, f"⏳ Timeout, retrying... ({attempt + 1}/{MAX_RETRIES})")
+            msg = await safe_send_message(update, f"⏳ Таймаут, повтор... ({attempt + 1}/{MAX_RETRIES})")
             await asyncio.sleep(5)
             if msg:
                 try:
@@ -420,7 +423,7 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
                     pass
             return await ask_gemini(update, context, prompt, user_id, chat_id, attempt + 1)
         else:
-            await safe_send_message(update, "❌ Server timeout. Try again later")
+            await safe_send_message(update, "❌ Сервер не отвечает. Попробуй позже")
                 
     except Exception as e:
         logger.error(f"Error: {e}")
@@ -428,24 +431,24 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
             await fake_message.delete()
         except:
             pass
-        await safe_send_message(update, f"❌ Error: {str(e)[:100]}")
+        await safe_send_message(update, f"❌ Ошибка: {str(e)[:100]}")
 
-# ===== COMMANDS =====
+# ===== КОМАНДЫ (РУССКИЙ) =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🎭 Select mode", callback_data="mode_menu")]]
+    keyboard = [[InlineKeyboardButton("🎭 Выбрать режим", callback_data="mode_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        "👋 *Hello! This is II PEPEL bot*\n\n"
-        "🎯 *How to use:*\n\n"
-        "📱 *Private chat:* just write any message\n\n"
-        "👥 *Group chat:*\n"
-        "• Write `pepel` at the beginning\n"
-        "• OR reply to my message\n\n"
-        "📝 *Commands:*\n"
-        "• `/clear` - clear history\n"
-        "• `/admin` - admin panel\n\n"
-        "👇 Press button below to select style",
+        "👋 *Привет! Это бот ИИ ПЕПЕЛ*\n\n"
+        "🎯 *Как меня вызвать:*\n\n"
+        "📱 *В личке:* просто пиши любое сообщение\n\n"
+        "👥 *В группе:*\n"
+        "• Напиши `пепел` в начале сообщения\n"
+        "• ИЛИ ответь на моё сообщение\n\n"
+        "📝 *Команды:*\n"
+        "• `/clear` - очистить историю\n"
+        "• `/admin` - админ-панель\n\n"
+        "👇 Нажми на кнопку ниже, чтобы выбрать стиль общения",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=reply_markup
     )
@@ -453,7 +456,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     clear_user_history(user_id)
-    await update.message.reply_text("🧹 *History cleared*", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("🧹 *История диалога очищена!*", parse_mode=ParseMode.MARKDOWN)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -477,7 +480,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         starts_with, cleaned = starts_with_pepel(message_text)
         if starts_with:
             should_answer = True
-            cleaned_text = cleaned if cleaned else "say something"
+            cleaned_text = cleaned if cleaned else "скажи что-нибудь"
         elif reply_to_message and reply_to_message.from_user and reply_to_message.from_user.id == context.bot.id:
             should_answer = True
             cleaned_text = message_text
@@ -492,9 +495,9 @@ def main():
     load_data()
     
     print("=" * 50)
-    print("II PEPEL BOT (via OpenRouter)")
-    print(f"Model: {MODEL}")
-    print(f"Admins: {admins}")
+    print("🤬 ИИ ПЕПЕЛ БОТ (через OpenRouter)")
+    print(f"Модель: {MODEL}")
+    print(f"Админы: {admins}")
     print("=" * 50)
     
     app = Application.builder().token(BOT_TOKEN).build()
@@ -514,13 +517,13 @@ def main():
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("Bot started successfully!")
+    print("Бот успешно запущен!")
     app.run_polling()
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\nBot stopped")
+        print("\nБот остановлен")
     except Exception as e:
-        print(f"\nCritical error: {e}")
+        print(f"\nКритическая ошибка: {e}")
