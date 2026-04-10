@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""
-Telegram бот ИИ ПЕПЕЛ
-✅ Работает через OpenRouter (без региональных блокировок)
-✅ Готов к хостингу (все переменные через .env)
-✅ Работает в группах и личке
-✅ Админ-панель
-"""
-
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import sys
 import io
@@ -16,7 +7,6 @@ import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-# Дальше идет остальной код...
 import logging
 import asyncio
 import httpx
@@ -29,16 +19,16 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.constants import ParseMode
 from telegram.error import RetryAfter
 
+# Загружаем переменные из .env
 load_dotenv()
 
-# ... остальной код без изменений ...
 # ===== ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 ADMIN_IDS = os.getenv("ADMIN_IDS", "")
 
 # Модель Gemini через OpenRouter (бесплатно)
-MODEL = os.getenv("MODEL", "google/gemini-3.1-flash-lite-preview:free")
+MODEL = os.getenv("MODEL", "google/gemini-2.0-flash-exp:free")
 
 # URL OpenRouter API
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -51,11 +41,11 @@ FAKE_MESSAGE_DELAY = float(os.getenv("FAKE_MESSAGE_DELAY", "2.0"))
 
 # Проверка обязательных переменных
 if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN не задан! Создай файл .env")
+    raise ValueError("BOT_TOKEN not set!")
 if not OPENROUTER_API_KEY:
-    raise ValueError("❌ OPENROUTER_API_KEY не задан! Получи ключ на openrouter.ai/keys")
+    raise ValueError("OPENROUTER_API_KEY not set!")
 if not ADMIN_IDS:
-    raise ValueError("❌ ADMIN_IDS не задан! Укажи свой Telegram ID")
+    raise ValueError("ADMIN_IDS not set!")
 
 # Парсим админов
 admins_list = [int(x.strip()) for x in ADMIN_IDS.split(",") if x.strip().isdigit()]
@@ -118,17 +108,16 @@ async def mode_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     
     keyboard = [
-        [InlineKeyboardButton("🤬 ОСКОРБИТЕЛЬНЫЙ", callback_data="mode_rude")],
-        [InlineKeyboardButton("😊 ОБЫЧНЫЙ", callback_data="mode_normal")],
+        [InlineKeyboardButton("OSKORBITELNY", callback_data="mode_rude")],
+        [InlineKeyboardButton("OBYCHNY", callback_data="mode_normal")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
         await query.edit_message_text(
-            "🎭 *Выбери режим общения:*\n\n"
-            "🤬 *Оскорбительный* - отвечает с легкими оскорблениями\n"
-            "😊 *Обычный* - вежливый ассистент",
-            parse_mode=ParseMode.MARKDOWN,
+            "Choose mode:\n\n"
+            "Rude - answers with insults\n"
+            "Normal - polite assistant",
             reply_markup=reply_markup
         )
     except RetryAfter as e:
@@ -142,14 +131,11 @@ async def mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mode = query.data.split("_")[1]
     user_modes[user_id] = mode
     
-    mode_text = "ОСКОРБИТЕЛЬНЫЙ" if mode == "rude" else "ОБЫЧНЫЙ"
+    mode_text = "Rude" if mode == "rude" else "Normal"
     emoji = "🤬" if mode == "rude" else "😊"
     
     try:
-        await query.edit_message_text(
-            f"{emoji} *Режим изменен на {mode_text}*",
-            parse_mode=ParseMode.MARKDOWN
-        )
+        await query.edit_message_text(f"{emoji} Mode changed to {mode_text}")
     except RetryAfter as e:
         await asyncio.sleep(e.retry_after)
     
@@ -163,20 +149,20 @@ async def mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_admin(user_id):
-        await update.message.reply_text("❌ Нет доступа")
+        await update.message.reply_text("No access")
         return
     
-    status = "✅ ВКЛЮЧЕН" if bot_enabled else "❌ ВЫКЛЮЧЕН"
+    status = "ON" if bot_enabled else "OFF"
     keyboard = [
-        [InlineKeyboardButton(f"{status}", callback_data="admin_toggle")],
-        [InlineKeyboardButton("👥 Админы", callback_data="admin_list")],
-        [InlineKeyboardButton("🔨 Бан юзеров", callback_data="admin_banned_users")],
-        [InlineKeyboardButton("🚫 Бан групп", callback_data="admin_banned_chats")],
-        [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")],
-        [InlineKeyboardButton("💾 Сохранить данные", callback_data="admin_save")],
+        [InlineKeyboardButton(f"Status: {status}", callback_data="admin_toggle")],
+        [InlineKeyboardButton("Admins list", callback_data="admin_list")],
+        [InlineKeyboardButton("Banned users", callback_data="admin_banned_users")],
+        [InlineKeyboardButton("Banned chats", callback_data="admin_banned_chats")],
+        [InlineKeyboardButton("Statistics", callback_data="admin_stats")],
+        [InlineKeyboardButton("Save data", callback_data="admin_save")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("🔧 *Админ-панель*", parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+    await update.message.reply_text("Admin panel:", reply_markup=reply_markup)
 
 async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -184,7 +170,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = query.from_user.id
     if not is_admin(user_id):
-        await query.edit_message_text("❌ Доступ запрещен")
+        await query.edit_message_text("Access denied")
         return
     
     action = query.data.split("_")[1]
@@ -193,50 +179,50 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         global bot_enabled
         bot_enabled = not bot_enabled
         save_data()
-        status = "ВКЛЮЧЕН" if bot_enabled else "ВЫКЛЮЧЕН"
-        await query.edit_message_text(f"✅ Бот {status}")
+        status = "ON" if bot_enabled else "OFF"
+        await query.edit_message_text(f"Bot {status}")
         await asyncio.sleep(2)
         await query.delete_message()
     
     elif action == "list":
-        admin_list = "\n".join([f"• `{aid}`" for aid in admins])
-        await query.edit_message_text(f"👥 *Админы:*\n{admin_list}", parse_mode=ParseMode.MARKDOWN)
+        admin_list = "\n".join([f"• {aid}" for aid in admins])
+        await query.edit_message_text(f"Admins:\n{admin_list}")
         await asyncio.sleep(5)
         await query.delete_message()
     
     elif action == "banned_users":
         if banned_users:
-            banned_list = "\n".join([f"• `{uid}`" for uid in banned_users])
-            await query.edit_message_text(f"🔨 *Забаненные:*\n{banned_list}", parse_mode=ParseMode.MARKDOWN)
+            banned_list = "\n".join([f"• {uid}" for uid in banned_users])
+            await query.edit_message_text(f"Banned users:\n{banned_list}")
         else:
-            await query.edit_message_text("🔨 Нет забаненных")
+            await query.edit_message_text("No banned users")
         await asyncio.sleep(5)
         await query.delete_message()
     
     elif action == "banned_chats":
         if banned_chats:
-            banned_list = "\n".join([f"• `{cid}`" for cid in banned_chats])
-            await query.edit_message_text(f"🚫 *Забаненные группы:*\n{banned_list}", parse_mode=ParseMode.MARKDOWN)
+            banned_list = "\n".join([f"• {cid}" for cid in banned_chats])
+            await query.edit_message_text(f"Banned chats:\n{banned_list}")
         else:
-            await query.edit_message_text("🚫 Нет забаненных групп")
+            await query.edit_message_text("No banned chats")
         await asyncio.sleep(5)
         await query.delete_message()
     
     elif action == "stats":
         stats_text = (
-            f"📊 *Статистика:*\n"
-            f"• Диалогов: {len(user_histories)}\n"
-            f"• Админов: {len(admins)}\n"
-            f"• В бане: {len(banned_users)}\n"
-            f"• Бот: {'Вкл' if bot_enabled else 'Выкл'}"
+            f"Statistics:\n"
+            f"Dialogs: {len(user_histories)}\n"
+            f"Admins: {len(admins)}\n"
+            f"Banned: {len(banned_users)}\n"
+            f"Bot: {'ON' if bot_enabled else 'OFF'}"
         )
-        await query.edit_message_text(stats_text, parse_mode=ParseMode.MARKDOWN)
+        await query.edit_message_text(stats_text)
         await asyncio.sleep(5)
         await query.delete_message()
     
     elif action == "save":
         save_data()
-        await query.edit_message_text("💾 Данные сохранены")
+        await query.edit_message_text("Data saved")
         await asyncio.sleep(2)
         await query.delete_message()
 
@@ -248,9 +234,9 @@ async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if new_admin not in admins:
             admins.append(new_admin)
             save_data()
-            await update.message.reply_text(f"✅ Админ {new_admin} добавлен")
+            await update.message.reply_text(f"Admin {new_admin} added")
     except:
-        await update.message.reply_text("❌ /addadmin ID")
+        await update.message.reply_text("Use: /addadmin ID")
 
 async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -260,9 +246,9 @@ async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if old_admin in admins and old_admin != admins[0]:
             admins.remove(old_admin)
             save_data()
-            await update.message.reply_text(f"✅ Админ {old_admin} удален")
+            await update.message.reply_text(f"Admin {old_admin} removed")
     except:
-        await update.message.reply_text("❌ /removeadmin ID")
+        await update.message.reply_text("Use: /removeadmin ID")
 
 async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -272,9 +258,9 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if ban_id not in banned_users:
             banned_users.append(ban_id)
             save_data()
-            await update.message.reply_text(f"🔨 Пользователь {ban_id} забанен")
+            await update.message.reply_text(f"User {ban_id} banned")
     except:
-        await update.message.reply_text("❌ /ban ID")
+        await update.message.reply_text("Use: /ban ID")
 
 async def ban_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -284,9 +270,9 @@ async def ban_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if ban_id not in banned_chats:
             banned_chats.append(ban_id)
             save_data()
-            await update.message.reply_text(f"🚫 Группа {ban_id} забанена")
+            await update.message.reply_text(f"Chat {ban_id} banned")
     except:
-        await update.message.reply_text("❌ /banchat ID")
+        await update.message.reply_text("Use: /banchat ID")
 
 async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -296,13 +282,13 @@ async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if unban_id in banned_users:
             banned_users.remove(unban_id)
             save_data()
-            await update.message.reply_text(f"🔓 Пользователь {unban_id} разбанен")
+            await update.message.reply_text(f"User {unban_id} unbanned")
         elif unban_id in banned_chats:
             banned_chats.remove(unban_id)
             save_data()
-            await update.message.reply_text(f"🔓 Группа {unban_id} разбанена")
+            await update.message.reply_text(f"Chat {unban_id} unbanned")
     except:
-        await update.message.reply_text("❌ /unban ID")
+        await update.message.reply_text("Use: /unban ID")
 
 # ===== ОСНОВНЫЕ ФУНКЦИИ =====
 def get_user_history(user_id: int) -> list:
@@ -321,17 +307,17 @@ def clear_user_history(user_id: int):
 
 async def safe_send_message(update, text):
     try:
-        return await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+        return await update.message.reply_text(text)
     except RetryAfter as e:
-        logger.warning(f"Flood control, ждем {e.retry_after} сек")
+        logger.warning(f"Flood control, wait {e.retry_after} sec")
         await asyncio.sleep(e.retry_after)
-        return await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+        return await update.message.reply_text(text)
     except Exception as e:
-        logger.error(f"Ошибка отправки: {e}")
+        logger.error(f"Send error: {e}")
         return None
 
 async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt: str, user_id: int, chat_id: int, attempt=0):
-    """Запрос к Gemini через OpenRouter"""
+    """Request to Gemini via OpenRouter"""
     
     if is_banned(user_id, chat_id):
         return
@@ -340,26 +326,26 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
     history = get_user_history(user_id)
     mode = user_modes.get(user_id, 'rude')
     
-    # Формируем системный промпт
+    # System prompt
     if mode == 'rude':
-        system_prompt = """Ты грубый ИИ по имени "ИИ Пепел". ПРАВИЛА:
-1. ВСЕГДА отвечай на вопрос по существу
-2. Добавь небольшое оскорбление в конце
-3. Используй иногда: сын шлюхи, блек рашер, фрик, тупой, даун, еблан
-4. Отвечай коротко (максимум 2 предложения)"""
+        system_prompt = """You are a rude AI named "II Pepel". RULES:
+1. ALWAYS answer the question
+2. Add a small insult at the end
+3. Use sometimes: son of a bitch, black rusher, freak, stupid
+4. Answer short (max 2 sentences)"""
     else:
-        system_prompt = """Ты вежливый ассистент по имени "ИИ Пепел". Отвечай на вопрос по существу, коротко и дружелюбно."""
+        system_prompt = """You are a polite assistant named "II Pepel". Answer shortly and friendly."""
     
-    # Формируем сообщения для OpenRouter
+    # Messages for OpenRouter
     messages = [
         {"role": "system", "content": system_prompt}
     ]
     
-    # Добавляем историю
+    # Add history
     for msg in history:
         messages.append({"role": msg["role"], "content": msg["content"]})
     
-    # Добавляем текущий вопрос
+    # Add current question
     messages.append({"role": "user", "content": prompt})
     
     payload = {
@@ -373,13 +359,13 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
         "HTTP-Referer": "https://t.me/pepe_bot",
-        "X-Title": "ИИ Пепел Бот"
+        "X-Title": "II Pepel Bot"
     }
     
     start_time = datetime.now()
     await asyncio.sleep(FAKE_MESSAGE_DELAY)
     
-    fake_message = await safe_send_message(update, "⏳ генерирую...")
+    fake_message = await safe_send_message(update, "generating...")
     
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
@@ -398,8 +384,8 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
             
             if response.status_code != 200:
                 error_text = response.text[:200]
-                logger.error(f"Ошибка {response.status_code}: {error_text}")
-                await safe_send_message(update, f"❌ Ошибка API: {response.status_code}")
+                logger.error(f"API error {response.status_code}: {error_text}")
+                await safe_send_message(update, f"API error: {response.status_code}")
                 return
             
             result = response.json()
@@ -409,20 +395,20 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
                 if full_response:
                     await safe_send_message(update, full_response)
                     add_to_history(user_id, "assistant", full_response)
-                    logger.info(f"✅ {elapsed:.1f} сек | модель: {MODEL}")
+                    logger.info(f"Done in {elapsed:.1f} sec | model: {MODEL}")
                     return
             
-            await safe_send_message(update, "❌ Пустой ответ от нейросети")
+            await safe_send_message(update, "Empty response")
     
     except httpx.TimeoutException:
-        logger.warning(f"Таймаут, попытка {attempt + 1}/{MAX_RETRIES}")
+        logger.warning(f"Timeout, attempt {attempt + 1}/{MAX_RETRIES}")
         try:
             await fake_message.delete()
         except:
             pass
         
         if attempt < MAX_RETRIES - 1:
-            msg = await safe_send_message(update, f"⏳ Таймаут, повтор... ({attempt + 1}/{MAX_RETRIES})")
+            msg = await safe_send_message(update, f"Timeout, retrying... ({attempt + 1}/{MAX_RETRIES})")
             await asyncio.sleep(5)
             if msg:
                 try:
@@ -431,43 +417,42 @@ async def ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt:
                     pass
             return await ask_gemini(update, context, prompt, user_id, chat_id, attempt + 1)
         else:
-            await safe_send_message(update, "❌ Сервер не отвечает. Попробуй позже")
+            await safe_send_message(update, "Server timeout. Try again later")
                 
     except Exception as e:
-        logger.error(f"Ошибка: {e}")
+        logger.error(f"Error: {e}")
         try:
             await fake_message.delete()
         except:
             pass
-        await safe_send_message(update, f"❌ Ошибка: {str(e)[:100]}")
+        await safe_send_message(update, f"Error: {str(e)[:100]}")
 
-# ===== КОМАНДЫ БОТА =====
+# ===== COMMANDS =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🎭 Выбрать режим", callback_data="mode_menu")]]
+    keyboard = [[InlineKeyboardButton("Choose mode", callback_data="mode_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        "👋 *ИИ ПЕПЕЛ*\n\n"
-        "🎯 *Как меня вызвать:*\n\n"
-        "📱 *В личке:* просто пиши любое сообщение\n\n"
-        "👥 *В группе:*\n"
-        "• Напиши `пепел` в начале сообщения\n"
-        "• ИЛИ ответь на моё сообщение\n\n"
-        "📝 *Команды:*\n"
-        "• `/clear` - очистить историю\n"
-        "• `/admin` - админ-панель\n\n"
-        "👇 Нажми на кнопку ниже, чтобы выбрать стиль общения",
-        parse_mode=ParseMode.MARKDOWN,
+        "II PEPEL BOT\n\n"
+        "HOW TO USE:\n\n"
+        "PRIVATE CHAT:\n"
+        "Just write any message\n\n"
+        "GROUP CHAT:\n"
+        "Write 'pepel' at the beginning\n"
+        "OR reply to my message\n\n"
+        "COMMANDS:\n"
+        "/clear - clear history\n"
+        "/admin - admin panel\n\n"
+        "Press button below to choose style",
         reply_markup=reply_markup
     )
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     clear_user_history(user_id)
-    await update.message.reply_text("🧹 *История диалога очищена!*", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("History cleared")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка сообщений"""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     message_text = update.message.text
@@ -489,7 +474,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         starts_with, cleaned = starts_with_pepel(message_text)
         if starts_with:
             should_answer = True
-            cleaned_text = cleaned if cleaned else "скажи что-нибудь"
+            cleaned_text = cleaned if cleaned else "say something"
         elif reply_to_message and reply_to_message.from_user and reply_to_message.from_user.id == context.bot.id:
             should_answer = True
             cleaned_text = message_text
@@ -503,18 +488,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     load_data()
     
-    print("=" * 60)
-    print("🤬 ИИ ПЕПЕЛ БОТ (через OpenRouter)")
-    print(f"✅ Модель: {MODEL}")
-    print(f"✅ API: OpenRouter")
-    print(f"✅ Админы: {admins}")
-    print(f"✅ Таймаут: {TIMEOUT} сек")
-    print(f"✅ История: {MAX_HISTORY} сообщений")
-    print("=" * 60)
+    print("=" * 50)
+    print("II PEPEL BOT (via OpenRouter)")
+    print(f"Model: {MODEL}")
+    print(f"Admins: {admins}")
+    print(f"Timeout: {TIMEOUT} sec")
+    print("=" * 50)
     
     app = Application.builder().token(BOT_TOKEN).build()
     
-    # Команды
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("clear", clear_command))
     app.add_handler(CommandHandler("admin", admin_panel))
@@ -524,21 +506,19 @@ def main():
     app.add_handler(CommandHandler("banchat", ban_chat))
     app.add_handler(CommandHandler("unban", unban))
     
-    # Callback handlers
     app.add_handler(CallbackQueryHandler(mode_menu_callback, pattern="mode_menu"))
     app.add_handler(CallbackQueryHandler(mode_callback, pattern="mode_"))
     app.add_handler(CallbackQueryHandler(admin_callback, pattern="admin_"))
     
-    # Обработка сообщений
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("✅ Бот успешно запущен!")
+    print("Bot started!")
     app.run_polling()
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n👋 Бот остановлен")
+        print("\nBot stopped")
     except Exception as e:
-        print(f"\n❌ Критическая ошибка: {e}")
+        print(f"\nCritical error: {e}")
