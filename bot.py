@@ -7,6 +7,16 @@ Telegram бот ИИ ПЕПЕЛ
 ✅ Админ-панель
 """
 
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import sys
+import io
+
+# ПРИНУДИТЕЛЬНАЯ УСТАНОВКА UTF-8 (решает проблему с русским текстом)
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+# Дальше идет остальной код...
 import logging
 import asyncio
 import httpx
@@ -19,9 +29,9 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.constants import ParseMode
 from telegram.error import RetryAfter
 
-# Загружаем переменные из .env
 load_dotenv()
 
+# ... остальной код без изменений ...
 # ===== ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
